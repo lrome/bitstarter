@@ -25,7 +25,12 @@ var fs = require('fs');
 var program = require('commander');
 var cheerio = require('cheerio');
 var HTMLFILE_DEFAULT = "index.html";
+var URL_DEFAULT = "http://boiling-eyrie-6293.herokuapp.com";
 var CHECKSFILE_DEFAULT = "checks.json";
+var sys = require('util');
+var rest = require('./restler');
+var result;
+
 
 var assertFileExists = function(infile) {
     var instr = infile.toString();
@@ -36,8 +41,19 @@ var assertFileExists = function(infile) {
     return instr;
 };
 
+var assertUrlExists = function(url) {
+    var instr = url;
+    return instr;
+};
+
 var cheerioHtmlFile = function(htmlfile) {
     return cheerio.load(fs.readFileSync(htmlfile));
+    //return cheerio.load(result);
+};
+
+var cheerioHtmlUrl = function(html) {
+    //return cheerio.load(fs.readFileSync(htmlfile));
+    return cheerio.load(html);
 };
 
 var loadChecks = function(checksfile) {
@@ -55,20 +71,56 @@ var checkHtmlFile = function(htmlfile, checksfile) {
     return out;
 };
 
+var checkHtmlUrl = function(html, checksfile) {
+    $ = cheerioHtmlUrl(html);
+    var checks = loadChecks(checksfile).sort();
+    var out = {};
+    for(var ii in checks) {
+        var present = $(checks[ii]).length > 0;
+        out[checks[ii]] = present;
+    }
+    return out;
+};
+
 var clone = function(fn) {
     // Workaround for commander.js issue.
     // http://stackoverflow.com/a/6772648
     return fn.bind({});
+};
+// data will be a Buffer
+function processResponse(data) {
+  // converting Buffers to strings is expensive, so I prefer
+  // to do it explicitely when required
+  var str = data.toString();
+  return str;
+}
+
+var getUrl = function(url) {
+    rest.get('http://boiling-eyrie-6293.herokuapp.com').on('complete', function(result) {
+    if (result instanceof Error) {
+        sys.puts('Error: ' + result.message);
+        this.retry(5000); // try again after 5 sec
+     }
+        var r = processResponse(result);
+        var checkJson = checkHtmlUrl(r, program.checks);
+        var outJson = JSON.stringify(checkJson, null, 4);
+        console.log(outJson);
+   });
 };
 
 if(require.main == module) {
     program
         .option('-c, --checks <check_file>', 'Path to checks.json', clone(assertFileExists), CHECKSFILE_DEFAULT)
         .option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists), HTMLFILE_DEFAULT)
+        .option('-u, --url <http_url>', 'URL to html content')
         .parse(process.argv);
-    var checkJson = checkHtmlFile(program.file, program.checks);
-    var outJson = JSON.stringify(checkJson, null, 4);
-    console.log(outJson);
+        if (program.url) {
+           var response = getUrl('http://boiling-eyrie-6293.herokuapp.com');     
+        } else {
+            var checkJson = checkHtmlFile(program.file, program.checks);
+            var outJson = JSON.stringify(checkJson, null, 4);
+            console.log(outJson);
+        }
 } else {
     exports.checkHtmlFile = checkHtmlFile;
 }
